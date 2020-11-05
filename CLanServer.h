@@ -21,43 +21,6 @@ using namespace std;
 
 class CLanServer {
 private:
-#define HEADER	2
-	/*enum { SEND, RECV };
-	enum {LAN, NET};
-
-	struct stRELEASE {
-		LONG64 IOCount;
-		LONG64 ReleaseFlag;
-		stRELEASE() {
-			IOCount = 0;
-			ReleaseFlag = TRUE;
-		}
-	};
-
-	struct stOVERLAPPED {
-		WSAOVERLAPPED Overlapped;
-		INT64 SessionID;
-		int Type;
-	};
-
-	struct stSESSION {
-		SOCKET sock;
-		SOCKET closeSock;
-		INT64 SessionID;
-		INT64 SessionIndex;
-		SOCKADDR_IN clientaddr;
-		stOVERLAPPED SendOverlapped;
-		stOVERLAPPED RecvOverlapped;
-		CRingBuffer RecvQ;
-		CLockfreeQueue<CPacket*> SendQ;
-		volatile LONG SendFlag;
-		CPacket* PacketArray[200];
-		int PacketCount;
-		__declspec(align(16))
-			LONG64 IOCount;
-		LONG64 ReleaseFlag;
-	};*/
-
 	SRWLOCK srwINDEX;
 	stSESSION* _SessionList;
 	stack<int> _IndexSession;
@@ -97,14 +60,16 @@ public:
 	int GetClientCount();
 	bool _Disconnect(stSESSION* pSession);
 	bool Disconnect(INT64 SessionID);
-	bool _SendPacket(stSESSION* pSession, CPacket* pSendPacket, int type = LAN);
-	bool SendPacket(INT64 SessionID, CPacket* pSendPacket, int type = LAN);
+	bool _SendPacket(stSESSION* pSession, CPacket* pSendPacket, int type = eLAN);
+	bool SendPacket(INT64 SessionID, CPacket* pSendPacket, int type = eLAN);
 	stSESSION* FindSession(INT64 SessionID);
 	void ReleaseSession(stSESSION* pSession);
 
 	void RecvPost(stSESSION* pSession);
 	void SendPost(stSESSION* pSession);
 	void Release(stSESSION* pSession);
+
+	void DebugFunc(stSESSION* pSession, int FuncNum);
 
 
 	

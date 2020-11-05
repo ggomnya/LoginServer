@@ -11,6 +11,14 @@ CLoginServer::CLoginServer() {
 	InitializeSRWLock(&srwACCOUNT);
 	InitializeSRWLock(&srwSESSION);
 	_ParameterCnt = 0;
+	_DBTokenMiss = 0;
+	//DB 연결
+	InitializeSRWLock(&_srwMYSQL);
+	mysql_init(&_conn);
+	my_bool reconnect = 1;
+	mysql_options(&_conn, MYSQL_OPT_RECONNECT, &reconnect);
+	_connection = mysql_real_connect(&_conn, "127.0.0.1", "root", "password", "accountdb", 3306, (char*)NULL, 0);
+	mysql_set_character_set(_connection, "utf8");
 	_LoginLanServer = new CLoginLanServer((LPVOID)this);
 }
 
@@ -80,6 +88,7 @@ void CLoginServer::OnRecv(INT64 SessionID, CPacket* pRecvPacket) {
 	WORD Type;
 	INT64 AccountNo;
 	char Token[64];
+	char DBToken[64];
 	INT64 Parameter;
 	*pRecvPacket >> Type >> AccountNo;
 	pRecvPacket->GetData(Token, 64);
@@ -89,10 +98,32 @@ void CLoginServer::OnRecv(INT64 SessionID, CPacket* pRecvPacket) {
 	}
 	/*
 		DB를 조회해 해당 Account의 Token과 받은 Token이 일치하는 지 확인
-	
-	
-	
 	*/
+
+	AcquireSRWLockExclusive(&_srwMYSQL);
+	char query[1000];
+	sprintf_s(query, "SELECT `sessionkey` FROM `v_account` WHERE (`accountno` = \'%lld\')", AccountNo);
+	int retval = mysql_query(_connection, query);
+	//DB에 오류
+	if (retval != 0) {
+		CCrashDump::Crash();
+	}
+	//결과 가져오기
+	MYSQL_RES* sql_result = mysql_use_result(_connection);
+	MYSQL_ROW sql_row;
+	while ((sql_row = mysql_fetch_row(sql_result)) != NULL) {
+		//Token 비교하기
+		if (sql_row[0] != NULL) {
+			if (memcmp(Token, sql_row[0], 64) != 0) {
+				//만약 일치하지 않는 경우
+				_DBTokenMiss++;
+				//Disconnect(SessionID);
+			}
+		}
+	}
+	mysql_free_result(sql_result);
+	ReleaseSRWLockExclusive(&_srwMYSQL);
+
 	AcquireSRWLockExclusive(&srwACCOUNT);
 	st_ACCOUNT* pAccount = FindAccount(AccountNo);
 	//이미 AccountNo가 존재하는 경우
@@ -143,7 +174,7 @@ void CLoginServer::OnRecv(INT64 SessionID, CPacket* pRecvPacket) {
 	}
 	ReleaseSRWLockShared(&CLoginLanServer::srwCLIENT);
 	if(LanSessionID !=0)
-		_LoginLanServer->SendPacket(LanSessionID, pSendPacket, LAN);
+		_LoginLanServer->SendPacket(LanSessionID, pSendPacket, eLAN);
 	pSendPacket->Free();
 	InterlockedIncrement(&_LoginLanServer->_LoginWaitCount);
 }

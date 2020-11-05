@@ -342,9 +342,9 @@ bool CNetServer::Disconnect(INT64 SessionID) {
 
 bool CNetServer::_SendPacket(stSESSION* pSession, CPacket* pSendPacket, int type) {
 	pSendPacket->AddRef();
-	if (type == LAN)
+	if (type == eLAN)
 		pSendPacket->SetHeader_2();
-	else if (type == NET) {
+	else if (type == eNET) {
 		pSendPacket->SetHeader_5();
 		pSendPacket->Encode();
 	}
@@ -358,9 +358,9 @@ bool CNetServer::SendPacket(INT64 SessionID, CPacket* pSendPacket, int type, boo
 	if (pSession == NULL)
 		return false;
 	pSendPacket->AddRef();
-	if (type == LAN)
+	if (type == eLAN)
 		pSendPacket->SetHeader_2();
-	else if (type == NET) {
+	else if (type == eNET) {
 		pSendPacket->SetHeader_5();
 		pSendPacket->Encode();
 	}
@@ -514,6 +514,8 @@ void CNetServer::SendPost(stSESSION* pSession) {
 	WSABUF sendbuf[200];
 	DWORD i = 0;
 	while (pSession->SendQ.Size() > 0) {
+		if (i >= 200)
+			break;
 		pSession->SendQ.Dequeue(&(pSession->PacketArray[i]));
 		sendbuf[i].buf = pSession->PacketArray[i]->GetHeaderPtr();
 		sendbuf[i].len = pSession->PacketArray[i]->GetDataSize() + pSession->PacketArray[i]->GetHeaderSize();

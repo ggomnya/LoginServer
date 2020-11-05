@@ -7,6 +7,8 @@ unordered_map<INT64, st_CLIENT*> CLoginLanServer::_ClientMap;
 
 extern WCHAR ChatServerIP[16];
 extern USHORT ChatServerPort;
+extern WCHAR GameServerIP[16];
+extern USHORT GameServerPort;
 
 CLoginLanServer::CLoginLanServer(LPVOID ptr) {
 	pLoginServer = ptr;
@@ -75,8 +77,6 @@ void CLoginLanServer::OnRecv(INT64 SessionID, CPacket* pRecvPacket) {
 		pClient->Type = ServerType;
 		memcpy((char*)pClient->IP, (char*)ChatServerIP, 32);
 		pClient->Port = ChatServerPort;
-		/*pRecvPacket->GetData((char*)pClient->IP, 32);
-		*pRecvPacket >> pClient->Port;*/
 		ReleaseSRWLockExclusive(&srwCLIENT);
 	}
 	//Token 확인 메세지가 온 경우
@@ -120,27 +120,27 @@ void CLoginLanServer::OnRecv(INT64 SessionID, CPacket* pRecvPacket) {
 				int ServerCnt = 0;
 				WCHAR ID[20];
 				WCHAR Nickname[20];
-				WCHAR GameServerIP[16];
-				USHORT GameServerPort=0;
-				WCHAR ChatServerIP[16];
-				USHORT ChatServerPort=0;
-				AcquireSRWLockShared(&srwCLIENT);
-				for (auto it = _ClientMap.begin(); it != _ClientMap.end(); it++) {
-					if (it->second->Type == dfSERVER_TYPE_GAME) {
-						GameServerPort = it->second->Port;
-						memcpy(GameServerIP, it->second->IP, 32);
-						ServerCnt++;
-					}
-					else if (it->second->Type == dfSERVER_TYPE_CHAT) {
-						ChatServerPort = it->second->Port;
-						memcpy(ChatServerIP, it->second->IP, 32);
-						ServerCnt++;
-					}
-				}
-				ReleaseSRWLockShared(&srwCLIENT);
-				if (ServerCnt == 0) {
-					Status = dfLOGIN_STATUS_NOSERVER;
-				}
+				//WCHAR GameServerIP[16];
+				//USHORT GameServerPort=0;
+				//WCHAR ChatServerIP[16];
+				//USHORT ChatServerPort=0;
+				//AcquireSRWLockShared(&srwCLIENT);
+				//for (auto it = _ClientMap.begin(); it != _ClientMap.end(); it++) {
+				//	if (it->second->Type == dfSERVER_TYPE_GAME) {
+				//		GameServerPort = it->second->Port;
+				//		memcpy(GameServerIP, it->second->IP, 32);
+				//		ServerCnt++;
+				//	}
+				//	else if (it->second->Type == dfSERVER_TYPE_CHAT) {
+				//		ChatServerPort = it->second->Port;
+				//		memcpy(ChatServerIP, it->second->IP, 32);
+				//		ServerCnt++;
+				//	}
+				//}
+				//ReleaseSRWLockShared(&srwCLIENT);
+				//if (ServerCnt == 0) {
+				//	Status = dfLOGIN_STATUS_NOSERVER;
+				//}
 
 				wsprintf(ID, L"ID_%d", AccountNo);
 				wsprintf(Nickname, L"NICK_%d", AccountNo);
@@ -149,7 +149,7 @@ void CLoginLanServer::OnRecv(INT64 SessionID, CPacket* pRecvPacket) {
 				CPacket* pSendPacket = CPacket::Alloc();
 				MPLoginResLogin(pSendPacket, en_PACKET_CS_LOGIN_RES_LOGIN, AccountNo, Status,
 					ID, Nickname, GameServerIP, GameServerPort, ChatServerIP, ChatServerPort);
-				//((CLoginServer*)pLoginServer)->SendPacket(LoginSessionID, pSendPacket, NET);
+				((CLoginServer*)pLoginServer)->SendPacket(LoginSessionID, pSendPacket, eNET);
 				pSendPacket->Free();
 				
 				//log

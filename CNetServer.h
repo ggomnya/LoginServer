@@ -63,8 +63,8 @@ public:
 	int GetClientCount();
 	bool _Disconnect(stSESSION* pSession);
 	bool Disconnect(INT64 SessionID);
-	bool _SendPacket(stSESSION* pSession, CPacket* pSendPacket, int type = NET);
-	bool SendPacket(INT64 SessionID, CPacket* pSendPacket, int type = NET, bool post = false);
+	bool _SendPacket(stSESSION* pSession, CPacket* pSendPacket, int type = eNET);
+	bool SendPacket(INT64 SessionID, CPacket* pSendPacket, int type = eNET, bool post = false);
 	stSESSION* FindSession(INT64 SessionID);
 	void ReleaseSession(stSESSION* pSession);
 

@@ -1,9 +1,11 @@
 #pragma once
 #include "CNetServer.h"
 #include "CLoginLanServer.h"
-#include "CommonProtocol_Login.h"
+#include "CommonProtocol.h"
 #include <unordered_map>
-#include <strsafe.h>
+#include "mysql/include/mysql.h"
+#include "mysql/include/errmsg.h"
+#pragma comment(lib, "mysql/lib/libmysql.lib")
 using namespace std;
 
 class CLoginServer : public CNetServer {
@@ -17,11 +19,16 @@ private:
 	static unordered_map<INT64, st_ACCOUNT*> _AccountMap;
 	//key - SessionID, value - st_LOGINSESSION
 	static unordered_map<INT64, st_LOGINSESSION*> _SessionMap;
+
+	//DB ¿¬°á¿ë ¸É¹ö
+	SRWLOCK _srwMYSQL;
+	MYSQL _conn;
+	MYSQL* _connection;
 public:
 	friend class CLoginLanServer;
 	CLoginLanServer* _LoginLanServer;
+	INT64 _DBTokenMiss;
 	CLoginServer();
-	
 
 
 	void MPReqNewClientLogin(CPacket* pPacket, WORD Type, INT64 AccountNo, char* Token, INT64 Parameter);

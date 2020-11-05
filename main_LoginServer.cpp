@@ -2,11 +2,17 @@
 #include "CLoginLanServer.h"
 #include "textparser.h"
 #include <conio.h>
+#include "CCpuUsage.h"
+#include "CProcessUsage.h"
 
 WCHAR ChatServerIP[16];
 USHORT ChatServerPort;
+WCHAR GameServerIP[16];
+USHORT GameServerPort;
 
 int wmain() {
+	CCpuUsage CpuUsage;
+	CProcessUsage ProcessUsage;
 	CINIParse Parse;
 	WCHAR NetServerIP[16];
 	USHORT NetServerPort;
@@ -34,6 +40,9 @@ int wmain() {
 
 	Parse.GetValue(L"CHAT_IP", ChatServerIP);
 	Parse.GetValue(L"CHAT_PORT", (DWORD*)&ChatServerPort);
+
+	Parse.GetValue(L"GAME_IP", GameServerIP);
+	Parse.GetValue(L"GAME_PORT", (DWORD*)&GameServerPort);
 
 	CLoginServer* server = new CLoginServer;
 	server->Start(INADDR_ANY, NetServerPort, NetServerThreadNum, NetServerIOCPNum, NetServerMaxSession);
@@ -63,12 +72,16 @@ int wmain() {
 			wprintf(L"===========================================\n");
 			wprintf(L"LoginSuccessTPS: %d]\n", server->_LoginLanServer->_LoginSuccessTPS);
 			wprintf(L"LoginWaitCount: %d]\n", server->_LoginLanServer->_LoginWaitCount);
-			if(server->_LoginLanServer->_LoginSuccessTPS > 0)
+			if (server->_LoginLanServer->_LoginSuccessTPS > 0)
 				wprintf(L"Avg LoginTime: %dms]\n", server->_LoginLanServer->_TotalLoginTime / server->_LoginLanServer->_LoginSuccessTPS);
 			wprintf(L"\n");
-			//wprintf(L"[Update Block Count: %lld]\n", server->_BlockCount);
-		
-			//wprintf(L"[NewCount: %d] [DeleteCount: %d]\n\n", server._NewCount, server._DeleteCount);
+
+			CpuUsage.UpdateCpuTime();
+			ProcessUsage.UpdateProcessTime();
+			CpuUsage.PrintCPUInfo();
+			ProcessUsage.PrintProcessInfo();
+			wprintf(L"\n\n");
+
 			server->_AcceptTPS = 0;
 			server->_SendTPS = 0;
 			server->_RecvTPS = 0;
@@ -85,5 +98,4 @@ int wmain() {
 		}
 		Sleep(10);
 	}
-	//CLoginLanServer lanserver;
 }

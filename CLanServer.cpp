@@ -37,22 +37,23 @@ unsigned int WINAPI CLanServer::WorkerThread(LPVOID lParam) {
 			//recv인 경우
 			//g_RecvCnt++;
 			if (Overlapped->Type == RECV) {
+				DebugFunc(pSession, RECVCOM);
 				//데이터 받아서 SendQ에 넣은 후 Send하기
 				pSession->RecvQ.MoveRear(cbTransferred);
 				while (1) {
 					//헤더 사이즈 이상이 있는지 확인
-					if (pSession->RecvQ.GetUseSize() < HEADER)
+					if (pSession->RecvQ.GetUseSize() < LANHEADER)
 						break;
 					WORD Header;
 					//데이터가 있는지 확인
-					pSession->RecvQ.Peek((char*)&Header, sizeof(Header));
-					if (pSession->RecvQ.GetUseSize() < sizeof(Header) + Header)
+					pSession->RecvQ.Peek((char*)&Header, LANHEADER);
+					if (pSession->RecvQ.GetUseSize() < LANHEADER + Header)
 						break;
 					//pSession->RecvQ.MoveFront(sizeof(Header));
 					CPacket* RecvPacket = CPacket::Alloc();
-					int retval = pSession->RecvQ.Dequeue(RecvPacket->GetBufferPtr() + 3, Header + sizeof(Header));
+					int retval = pSession->RecvQ.Dequeue(RecvPacket->GetBufferPtr() + 3, Header + LANHEADER);
 					RecvPacket->MoveWritePos(Header);
-					if (retval < Header + sizeof(Header)) {
+					if (retval < Header + LANHEADER) {
 						Disconnect(pSession->SessionID);
 						RecvPacket->Free();
 						break;
@@ -69,6 +70,7 @@ unsigned int WINAPI CLanServer::WorkerThread(LPVOID lParam) {
 			}
 			//send 완료 경우
 			else {
+				DebugFunc(pSession, SENDCOM);
 				for (int i = 0; i < pSession->PacketCount; i++) {
 					pSession->PacketArray[i]->Free();
 					//InterlockedIncrement(&pSession->_DeleteCount);
@@ -266,9 +268,9 @@ bool CLanServer::Disconnect(INT64 SessionID) {
 
 bool CLanServer::_SendPacket(stSESSION* pSession, CPacket* pSendPacket, int type) {
 	pSendPacket->AddRef();
-	if (type == LAN)
+	if (type == eLAN)
 		pSendPacket->SetHeader_2();
-	else if (type == NET) {
+	else if (type == eNET) {
 		pSendPacket->SetHeader_5();
 		pSendPacket->Encode();
 	}
@@ -283,9 +285,9 @@ bool CLanServer::SendPacket(INT64 SessionID, CPacket* pSendPacket,int type) {
 	if (pSession == NULL)
 		return false;
 	pSendPacket->AddRef();
-	if(type == LAN)
+	if(type == eLAN)
 		pSendPacket->SetHeader_2();
-	else if (type == NET) {
+	else if (type == eNET) {
 		pSendPacket->SetHeader_5();
 		pSendPacket->Encode();
 	}
@@ -379,7 +381,7 @@ void CLanServer::RecvPost(stSESSION* pSession) {
 	memset(&pSession->RecvOverlapped, 0, sizeof(pSession->RecvOverlapped.Overlapped));
 	DWORD recvbyte = 0;
 	DWORD lpFlags = 0;
-
+	DebugFunc(pSession, RECVPOST);
 	//Recv 요청하기
 	if (pSession->RecvQ.GetFrontBufferPtr() <= pSession->RecvQ.GetRearBufferPtr() && (pSession->RecvQ.GetRearBufferPtr() != pSession->RecvQ.GetBufferPtr())) {
 		WSABUF recvbuf[2];
@@ -426,12 +428,15 @@ void CLanServer::SendPost(stSESSION* pSession) {
 		InterlockedExchange(&(pSession->SendFlag), TRUE);
 		return;
 	}
+	DebugFunc(pSession, SENDPOST);
 	memset(&pSession->SendOverlapped, 0, sizeof(pSession->SendOverlapped.Overlapped));
 	DWORD sendbyte = 0;
 	DWORD lpFlags = 0;
 	WSABUF sendbuf[200];
 	DWORD i = 0;
 	while (pSession->SendQ.Size() > 0) {
+		if (i >= 200)
+			break;
 		pSession->SendQ.Dequeue(&(pSession->PacketArray[i]));
 		sendbuf[i].buf = pSession->PacketArray[i]->GetHeaderPtr();
 		sendbuf[i].len = pSession->PacketArray[i]->GetDataSize() + pSession->PacketArray[i]->GetHeaderSize();
@@ -454,4 +459,14 @@ void CLanServer::SendPost(stSESSION* pSession) {
 	}
 }
 
+void CLanServer::DebugFunc(stSESSION* pSession, int FuncNum) {
+	return;
+	int idx = InterlockedIncrement(&pSession->debugCnt);
+	idx %= DEBUGNUM;
+	pSession->debug[idx].FuncNum = FuncNum;
+	pSession->debug[idx].IOCount = pSession->IOCount;
+	pSession->debug[idx].SessionID = pSession->SessionID;
+	pSession->debug[idx].ThreadID = GetCurrentThreadId();
+	pSession->debug[idx].Sock = pSession->sock;
 
+}

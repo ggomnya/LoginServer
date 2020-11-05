@@ -1,7 +1,6 @@
 #pragma once
 #include "CLanServer.h"
 #include <unordered_map>
-#include <strsafe.h>
 using namespace std;
 
 //class CLoginServer;
