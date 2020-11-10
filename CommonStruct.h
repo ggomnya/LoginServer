@@ -11,7 +11,11 @@ enum { SEND, RECV, UPDATE, CONNECT };
 enum { eLAN, eNET };
 enum { ACCEPT, RECVCOM, SENDCOM, UPDATECOM, PQCS, RECVPOST, SENDPOST, DIS, RELEASE};
 enum {LANHEADER = 2, NETHEADER = 5};
-#define DEBUGNUM	1
+
+#define DEBUGNUM	100
+#define dfPACKETNUM	200
+#define dfTIMEOUT	1000*10
+
 struct stRELEASE {
 	LONG64 IOCount;
 	LONG64 ReleaseFlag;
@@ -56,7 +60,7 @@ struct stSESSION {
 	CRingBuffer RecvQ;
 	CLockfreeQueue<CPacket*> SendQ;
 	volatile LONG SendFlag;
-	CPacket* PacketArray[200];
+	CPacket* PacketArray[dfPACKETNUM];
 	int PacketCount;
 	//여기부턴 debug용
 	int iSendbyte;
@@ -142,7 +146,7 @@ struct st_LOGINSESSION {
 	INT64 SessionID;
 	INT64 AccountNo;
 	char Token[64];
-
+	DWORD RecvTime;
 };
 
 

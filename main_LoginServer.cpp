@@ -24,6 +24,10 @@ int wmain() {
 	DWORD LanServerThreadNum;
 	DWORD LanServerIOCPNum;
 	DWORD LanServerMaxSession;
+	WCHAR DBConnectIP[16];
+	WCHAR DBConnectID[16];
+	WCHAR DBConnectPw[16];
+
 	Parse.LoadFile(L"LoginServer_Config.ini");
 
 	Parse.GetValue(L"IP", NetServerIP);
@@ -44,7 +48,11 @@ int wmain() {
 	Parse.GetValue(L"GAME_IP", GameServerIP);
 	Parse.GetValue(L"GAME_PORT", (DWORD*)&GameServerPort);
 
-	CLoginServer* server = new CLoginServer;
+	Parse.GetValue(L"DB_IP", DBConnectIP);
+	Parse.GetValue(L"DB_ID", DBConnectID);
+	Parse.GetValue(L"DB_PW", DBConnectPw);
+
+	CLoginServer* server = new CLoginServer(DBConnectIP, DBConnectID, DBConnectPw);
 	server->Start(INADDR_ANY, NetServerPort, NetServerThreadNum, NetServerIOCPNum, NetServerMaxSession);
 	server->_LoginLanServer->Start(INADDR_ANY, LanServerPort, LanServerThreadNum, LanServerIOCPNum, LanServerMaxSession);
 	DWORD curTime = timeGetTime();
@@ -70,10 +78,11 @@ int wmain() {
 			wprintf(L"[Lan Send TPS: %d]\n", server->_LoginLanServer->_SendTPS);
 			wprintf(L"[Lan Recv TPS: %d]\n", server->_LoginLanServer->_RecvTPS);
 			wprintf(L"===========================================\n");
-			wprintf(L"LoginSuccessTPS: %d]\n", server->_LoginLanServer->_LoginSuccessTPS);
-			wprintf(L"LoginWaitCount: %d]\n", server->_LoginLanServer->_LoginWaitCount);
+			wprintf(L"[Timeout Count: %d]\n", server->_TimeoutCount);
+			wprintf(L"[LoginSuccessTPS: %d]\n", server->_LoginLanServer->_LoginSuccessTPS);
+			wprintf(L"[LoginWaitCount: %d]\n", server->_LoginLanServer->_LoginWaitCount);
 			if (server->_LoginLanServer->_LoginSuccessTPS > 0)
-				wprintf(L"Avg LoginTime: %dms]\n", server->_LoginLanServer->_TotalLoginTime / server->_LoginLanServer->_LoginSuccessTPS);
+				wprintf(L"[Avg LoginTime: %dms]\n", server->_LoginLanServer->_TotalLoginTime / server->_LoginLanServer->_LoginSuccessTPS);
 			wprintf(L"\n");
 
 			CpuUsage.UpdateCpuTime();

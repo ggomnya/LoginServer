@@ -422,14 +422,18 @@ void CNetServer::Release(stSESSION* pSession) {
 		pSession->releaseSessionID = pSession->SessionID;
 		pSession->SessionID = -1;
 		InterlockedDecrement(&_SessionCnt);
-		while (pSession->SendQ.Size() > 0) {
-			pSession->SendQ.Dequeue(&(pSession->PacketArray[pSession->PacketCount]));
-			if (pSession->PacketArray[pSession->PacketCount] != NULL)
-				pSession->PacketCount++;
-		}
-		for (int j = 0; j < pSession->PacketCount; j++) {
-			pSession->PacketArray[j]->Free();
-			
+		while (pSession->SendQ.Size() > 0 || pSession->PacketCount > 0) {
+			while (pSession->SendQ.Size() > 0) {
+				if (pSession->PacketCount >= dfPACKETNUM)
+					break;
+				pSession->SendQ.Dequeue(&(pSession->PacketArray[pSession->PacketCount]));
+				if (pSession->PacketArray[pSession->PacketCount] != NULL)
+					pSession->PacketCount++;
+			}
+			for (int j = 0; j < pSession->PacketCount; j++) {
+				pSession->PacketArray[j]->Free();
+			}
+			pSession->PacketCount = 0;
 		}
 		LINGER optval;
 		optval.l_linger = 0;
@@ -511,10 +515,10 @@ void CNetServer::SendPost(stSESSION* pSession) {
 	memset(&pSession->SendOverlapped, 0, sizeof(pSession->SendOverlapped.Overlapped));
 	DWORD sendbyte = 0;
 	DWORD lpFlags = 0;
-	WSABUF sendbuf[200];
+	WSABUF sendbuf[dfPACKETNUM];
 	DWORD i = 0;
 	while (pSession->SendQ.Size() > 0) {
-		if (i >= 200)
+		if (i >= dfPACKETNUM)
 			break;
 		pSession->SendQ.Dequeue(&(pSession->PacketArray[i]));
 		sendbuf[i].buf = pSession->PacketArray[i]->GetHeaderPtr();
@@ -542,7 +546,7 @@ void CNetServer::SendPost(stSESSION* pSession) {
 }
 
 void CNetServer::DebugFunc(stSESSION* pSession, int FuncNum) {
-	return;
+	//return;
 	int idx = InterlockedIncrement(&pSession->debugCnt);
 	idx %= DEBUGNUM;
 	pSession->debug[idx].FuncNum = FuncNum;

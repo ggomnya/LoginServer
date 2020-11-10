@@ -20,6 +20,7 @@ public:
 	friend class CLoginServer;
 	CLoginLanServer(LPVOID ptr);
 
+
 	void MPLoginResLogin(CPacket* pPacket, WORD Type, INT64 AccountNo, BYTE Status, WCHAR* ID,
 		WCHAR* Nickname, WCHAR* GameServerIP, USHORT GameServerPort, WCHAR* ChatServerIP, USHORT ChatServerPort);
 

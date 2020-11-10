@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include "mysql/include/mysql.h"
 #include "mysql/include/errmsg.h"
+#include "CDBConnector_TLS.h"
 #pragma comment(lib, "mysql/lib/libmysql.lib")
 using namespace std;
 
@@ -12,24 +13,36 @@ class CLoginServer : public CNetServer {
 private:
 	INT64 _ParameterCnt;
 	static SRWLOCK srwACCOUNT;
-	static SRWLOCK srwSESSION;
+	static CRITICAL_SECTION csSESSION;
+	//static SRWLOCK srwSESSION;
 	static CObjectPool<st_ACCOUNT> _AccountPool;
 	static CObjectPool<st_LOGINSESSION> _SessionPool;
+	HANDLE _hEvent;
+	HANDLE _hTimeoutThread;
 	//key - AccountNo, value - st_ACCOUNT
 	static unordered_map<INT64, st_ACCOUNT*> _AccountMap;
 	//key - SessionID, value - st_LOGINSESSION
 	static unordered_map<INT64, st_LOGINSESSION*> _SessionMap;
 
 	//DB 연결용 맴버
-	SRWLOCK _srwMYSQL;
-	MYSQL _conn;
-	MYSQL* _connection;
+	CDBConnector_TLS* _DBConnector_TLS;
+	//SRWLOCK srwDB;
+	//CDBConnector* _DBConnector;
 public:
 	friend class CLoginLanServer;
 	CLoginLanServer* _LoginLanServer;
 	INT64 _DBTokenMiss;
-	CLoginServer();
+	INT64 _TimeoutCount;
+	CLoginServer(WCHAR* DBConnectIP, WCHAR* DBID, WCHAR* DBPW);
 
+	//timeout처리용 쓰레드 생성
+	static unsigned int WINAPI TimeoutThreadFunc(LPVOID lParam) {
+		((CLoginServer*)lParam)->TimeoutThread(lParam);
+		return 0;
+	}
+	unsigned int WINAPI TimeoutThread(LPVOID lParam);
+
+	void CheckTimeout();
 
 	void MPReqNewClientLogin(CPacket* pPacket, WORD Type, INT64 AccountNo, char* Token, INT64 Parameter);
 
@@ -59,7 +72,9 @@ public:
 		return pAccount;
 	}
 	static void RemoveAccount(INT64 AccountNo) {
-		_AccountMap.erase(AccountNo);
+		int retval = _AccountMap.erase(AccountNo);
+		if (retval == 0)
+			CCrashDump::Crash();
 	}
 
 	static INT64 GetSessionPoolAlloc() {
@@ -88,5 +103,10 @@ public:
 	//virtual void OnSend(INT64 SessionID, int SendSize) = 0;
 
 	virtual void OnError(int errorcode, const WCHAR* Err);
+
+	~CLoginServer() {
+		delete _DBConnector_TLS;
+		//delete _DBConnector;
+	}
 
 };

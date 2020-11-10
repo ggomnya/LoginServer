@@ -89,7 +89,7 @@ void CLoginLanServer::OnRecv(INT64 SessionID, CPacket* pRecvPacket) {
 		st_ACCOUNT* pAccount;
 		*pRecvPacket >> AccountNo >> Parameter;
 		//AccountNo 확인하기
-		AcquireSRWLockExclusive(&CLoginServer::srwACCOUNT);
+		AcquireSRWLockShared(&CLoginServer::srwACCOUNT);
 		pAccount = CLoginServer::FindAccount(AccountNo);
 		//없는 경우 - 이미 Client 연결이 끊겨서 Account 정보가 지워짐
 		//있는 경우 중 parameter가 다른경우 - 이미 새로 클라가 연결됨
@@ -98,49 +98,28 @@ void CLoginLanServer::OnRecv(INT64 SessionID, CPacket* pRecvPacket) {
 			if (pAccount->Parameter == Parameter) {
 				LoginSessionID = pAccount->SessionID;
 				SuccessTime = pAccount->RecvTime;
-				ReleaseSRWLockExclusive(&CLoginServer::srwACCOUNT);
+				ReleaseSRWLockShared(&CLoginServer::srwACCOUNT);
 
 
-				//SessionMap에서 찾는다
-				AcquireSRWLockExclusive(&CLoginServer::srwSESSION);
-				pLoginSession = CLoginServer::FindLoginSession(LoginSessionID);
-				//없는 경우 - 이미 해당 세션은 유효하지 않음 - 처리할 것이 없음
-				//존재하는 경우
-				if (pLoginSession != NULL) {
-					if (AccountNo != pLoginSession->AccountNo) {
-						CCrashDump::Crash();
-					}
-				}
-				else {
-					ReleaseSRWLockExclusive(&CLoginServer::srwSESSION);
-					return;
-				}
-				ReleaseSRWLockExclusive(&CLoginServer::srwSESSION);
+				////SessionMap에서 찾는다
+				//AcquireSRWLockExclusive(&CLoginServer::srwSESSION);
+				//pLoginSession = CLoginServer::FindLoginSession(LoginSessionID);
+				////없는 경우 - 이미 해당 세션은 유효하지 않음 - 처리할 것이 없음
+				////존재하는 경우
+				//if (pLoginSession != NULL) {
+				//	if (AccountNo != pLoginSession->AccountNo) {
+				//		CCrashDump::Crash();
+				//	}
+				//}
+				//else {
+				//	ReleaseSRWLockExclusive(&CLoginServer::srwSESSION);
+				//	return;
+				//}
+				//ReleaseSRWLockExclusive(&CLoginServer::srwSESSION);
 				WORD Status = dfLOGIN_STATUS_OK;
 				int ServerCnt = 0;
 				WCHAR ID[20];
 				WCHAR Nickname[20];
-				//WCHAR GameServerIP[16];
-				//USHORT GameServerPort=0;
-				//WCHAR ChatServerIP[16];
-				//USHORT ChatServerPort=0;
-				//AcquireSRWLockShared(&srwCLIENT);
-				//for (auto it = _ClientMap.begin(); it != _ClientMap.end(); it++) {
-				//	if (it->second->Type == dfSERVER_TYPE_GAME) {
-				//		GameServerPort = it->second->Port;
-				//		memcpy(GameServerIP, it->second->IP, 32);
-				//		ServerCnt++;
-				//	}
-				//	else if (it->second->Type == dfSERVER_TYPE_CHAT) {
-				//		ChatServerPort = it->second->Port;
-				//		memcpy(ChatServerIP, it->second->IP, 32);
-				//		ServerCnt++;
-				//	}
-				//}
-				//ReleaseSRWLockShared(&srwCLIENT);
-				//if (ServerCnt == 0) {
-				//	Status = dfLOGIN_STATUS_NOSERVER;
-				//}
 
 				wsprintf(ID, L"ID_%d", AccountNo);
 				wsprintf(Nickname, L"NICK_%d", AccountNo);
@@ -157,9 +136,13 @@ void CLoginLanServer::OnRecv(INT64 SessionID, CPacket* pRecvPacket) {
 				SuccessTime = timeGetTime() - SuccessTime;
 				InterlockedAdd(&_TotalLoginTime, SuccessTime);
 			}
+			else {
+				CCrashDump::Crash();
+				ReleaseSRWLockShared(&CLoginServer::srwACCOUNT);
+			}
 		}
 		else {
-			ReleaseSRWLockExclusive(&CLoginServer::srwACCOUNT);
+			ReleaseSRWLockShared(&CLoginServer::srwACCOUNT);
 		}
 
 	}

@@ -5,24 +5,56 @@ CObjectPool<st_LOGINSESSION> CLoginServer::_SessionPool;
 unordered_map<INT64, st_ACCOUNT*> CLoginServer::_AccountMap;
 unordered_map<INT64, st_LOGINSESSION*> CLoginServer::_SessionMap;
 SRWLOCK CLoginServer::srwACCOUNT;
-SRWLOCK CLoginServer::srwSESSION;
+//SRWLOCK CLoginServer::srwSESSION;
+CRITICAL_SECTION CLoginServer::csSESSION;
 
-CLoginServer::CLoginServer() {
+CLoginServer::CLoginServer(WCHAR* DBConnectIP, WCHAR* DBID, WCHAR* DBPW) {
 	InitializeSRWLock(&srwACCOUNT);
-	InitializeSRWLock(&srwSESSION);
+	InitializeCriticalSection(&csSESSION);
+	//InitializeSRWLock(&srwSESSION);
+	_hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+	_hTimeoutThread = (HANDLE)_beginthreadex(NULL, 0, TimeoutThreadFunc, this, 0, NULL);
 	_ParameterCnt = 0;
 	_DBTokenMiss = 0;
+	_TimeoutCount = 0;
 	//DB 연결
-	InitializeSRWLock(&_srwMYSQL);
-	mysql_init(&_conn);
-	my_bool reconnect = 1;
-	mysql_options(&_conn, MYSQL_OPT_RECONNECT, &reconnect);
-	_connection = mysql_real_connect(&_conn, "127.0.0.1", "root", "password", "accountdb", 3306, (char*)NULL, 0);
-	mysql_set_character_set(_connection, "utf8");
+	char chDBConnectIP[16];
+	char chDBID[16];
+	char chDBPW[16];
+	WideCharToMultiByte(CP_UTF8, 0, DBConnectIP, 16, chDBConnectIP, 16, 0, 0);
+	WideCharToMultiByte(CP_UTF8, 0, DBID, 16, chDBID, 16, 0, 0);
+	WideCharToMultiByte(CP_UTF8, 0, DBPW, 16, chDBPW, 16, 0, 0);
+	_DBConnector_TLS = new CDBConnector_TLS(chDBConnectIP, chDBID, chDBPW);
+	_DBConnector_TLS->Connect();
+	//InitializeSRWLock(&srwDB);
+	//_DBConnector = new CDBConnector(chDBConnectIP, chDBID, chDBPW);
+	//_DBConnector->Connect();
 	_LoginLanServer = new CLoginLanServer((LPVOID)this);
 }
 
+unsigned int WINAPI CLoginServer::TimeoutThread(LPVOID lParam) {
+	while (1) {
+		int retval = WaitForSingleObject(_hEvent, INFINITE);
+		if (retval == WAIT_TIMEOUT) {
+			CheckTimeout();
+		}
+		else {
+			return 0;
+		}
+	}
+}
 
+void CLoginServer::CheckTimeout() {
+	DWORD dwTimeout = timeGetTime();
+	EnterCriticalSection(&CLoginServer::csSESSION);
+	for (auto it = _SessionMap.begin(); it != _SessionMap.end(); it++) {
+		if (it->second->RecvTime + dfTIMEOUT <= dwTimeout) {
+			Disconnect(it->second->SessionID);
+			_TimeoutCount++;
+		}
+	}
+	LeaveCriticalSection(&CLoginServer::csSESSION);
+}
 
 void CLoginServer::MPReqNewClientLogin(CPacket* pPacket, WORD Type, INT64 AccountNo, char* Token, INT64 Parameter) {
 	*pPacket << Type << AccountNo;
@@ -36,17 +68,22 @@ void CLoginServer::OnClientJoin(SOCKADDR_IN clientaddr, INT64 SessionID) {
 	st_LOGINSESSION* newLoginSession = _SessionPool.Alloc();
 	newLoginSession->SessionID = SessionID;
 	newLoginSession->AccountNo = -1;
-	AcquireSRWLockExclusive(&srwSESSION);
+	newLoginSession->RecvTime = timeGetTime();
+	//AcquireSRWLockExclusive(&srwSESSION);
+	EnterCriticalSection(&csSESSION);
 	InsertLoginSession(newLoginSession);
-	ReleaseSRWLockExclusive(&srwSESSION);
+	LeaveCriticalSection(&csSESSION);
+	//ReleaseSRWLockExclusive(&srwSESSION);
 }
 
 void CLoginServer::OnClientLeave(INT64 SessionID) {
 	INT64 AccountNo;
 	st_LOGINSESSION* pLoginSession= NULL;
 	st_ACCOUNT* pAccount = NULL;
+	bool bRemove = false;
 	//SessionMap에서 삭제
-	AcquireSRWLockExclusive(&srwSESSION);
+	//AcquireSRWLockExclusive(&srwSESSION);
+	EnterCriticalSection(&csSESSION);
 	pLoginSession = FindLoginSession(SessionID);
 	if (pLoginSession != NULL) {
 		AccountNo = pLoginSession->AccountNo;
@@ -56,7 +93,8 @@ void CLoginServer::OnClientLeave(INT64 SessionID) {
 		//있어선 안됨
 		CCrashDump::Crash();
 	}
-	ReleaseSRWLockExclusive(&srwSESSION);
+	LeaveCriticalSection(&csSESSION);
+	//ReleaseSRWLockExclusive(&srwSESSION);
 	_SessionPool.Free(pLoginSession);
 
 	//AccountMap에서 삭제
@@ -67,10 +105,11 @@ void CLoginServer::OnClientLeave(INT64 SessionID) {
 		//세션 ID를 비교한 후 세션 ID가 같으면 바뀐적 없는 Account이므로 삭제
 		if (SessionID == pAccount->SessionID) {
 			RemoveAccount(AccountNo);
+			bRemove = true;
 		}
 	}
 	ReleaseSRWLockExclusive(&srwACCOUNT);
-	if (pAccount != NULL)
+	if (bRemove)
 		_AccountPool.Free(pAccount);
 	InterlockedDecrement(&_LoginLanServer->_LoginWaitCount);
 }
@@ -99,30 +138,48 @@ void CLoginServer::OnRecv(INT64 SessionID, CPacket* pRecvPacket) {
 	/*
 		DB를 조회해 해당 Account의 Token과 받은 Token이 일치하는 지 확인
 	*/
-
-	AcquireSRWLockExclusive(&_srwMYSQL);
+	//AcquireSRWLockExclusive(&srwDB);
 	char query[1000];
 	sprintf_s(query, "SELECT `sessionkey` FROM `v_account` WHERE (`accountno` = \'%lld\')", AccountNo);
-	int retval = mysql_query(_connection, query);
-	//DB에 오류
-	if (retval != 0) {
-		CCrashDump::Crash();
-	}
-	//결과 가져오기
-	MYSQL_RES* sql_result = mysql_use_result(_connection);
-	MYSQL_ROW sql_row;
-	while ((sql_row = mysql_fetch_row(sql_result)) != NULL) {
-		//Token 비교하기
-		if (sql_row[0] != NULL) {
-			if (memcmp(Token, sql_row[0], 64) != 0) {
-				//만약 일치하지 않는 경우
+	_DBConnector_TLS->Query(query);
+	//_DBConnector->Query(query);
+	MYSQL_ROW result;
+	while ((result = _DBConnector_TLS->Fetch()) != NULL) {
+	//while((result = _DBConnector->Fetch()) !=NULL) {
+		if (result[0] != NULL) {
+			if (memcmp(Token, result[0], 64) != 0) {
 				_DBTokenMiss++;
 				//Disconnect(SessionID);
 			}
 		}
 	}
-	mysql_free_result(sql_result);
-	ReleaseSRWLockExclusive(&_srwMYSQL);
+	_DBConnector_TLS->FreeResult();
+	//_DBConnector->FreeResult();
+	//ReleaseSRWLockExclusive(&srwDB);
+
+	//AcquireSRWLockExclusive(&_srwMYSQL);
+	//char query[1000];
+	//sprintf_s(query, "SELECT `sessionkey` FROM `v_account` WHERE (`accountno` = \'%lld\')", AccountNo);
+	//int retval = mysql_query(_connection, query);
+	////DB에 오류
+	//if (retval != 0) {
+	//	CCrashDump::Crash();
+	//}
+	////결과 가져오기
+	//MYSQL_RES* sql_result = mysql_use_result(_connection);
+	//MYSQL_ROW sql_row;
+	//while ((sql_row = mysql_fetch_row(sql_result)) != NULL) {
+	//	//Token 비교하기
+	//	if (sql_row[0] != NULL) {
+	//		if (memcmp(Token, sql_row[0], 64) != 0) {
+	//			//만약 일치하지 않는 경우
+	//			_DBTokenMiss++;
+	//			//Disconnect(SessionID);
+	//		}
+	//	}
+	//}
+	//mysql_free_result(sql_result);
+	//ReleaseSRWLockExclusive(&_srwMYSQL);
 
 	AcquireSRWLockExclusive(&srwACCOUNT);
 	st_ACCOUNT* pAccount = FindAccount(AccountNo);
@@ -146,7 +203,8 @@ void CLoginServer::OnRecv(INT64 SessionID, CPacket* pRecvPacket) {
 	ReleaseSRWLockExclusive(&srwACCOUNT);
 
 	//LoginSession 갱신
-	AcquireSRWLockExclusive(&srwSESSION);
+	//AcquireSRWLockExclusive(&srwSESSION);
+	EnterCriticalSection(&csSESSION);
 	st_LOGINSESSION* pLoginSession = FindLoginSession(SessionID);
 	if (pLoginSession == NULL) {
 		//있을 수 없음
@@ -156,7 +214,8 @@ void CLoginServer::OnRecv(INT64 SessionID, CPacket* pRecvPacket) {
 		pLoginSession->AccountNo = AccountNo;
 		memcpy(pLoginSession->Token, Token, 64);
 	}
-	ReleaseSRWLockExclusive(&srwSESSION);
+	LeaveCriticalSection(&csSESSION);
+	//ReleaseSRWLockExclusive(&srwSESSION);
 
 	//LanServer에 Parameter와 AccountNo넣어서 요청하기
 	//SendPacket 세팅 후 
