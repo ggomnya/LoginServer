@@ -19,9 +19,10 @@ unsigned int WINAPI CNetServer::WorkerThread(LPVOID lParam) {
 		stOVERLAPPED* Overlapped;
 		retval = GetQueuedCompletionStatus(_hcp, &cbTransferred, (PULONG_PTR)&pSession, (LPOVERLAPPED*)&Overlapped, INFINITE);
 		if (retval == false) {
-			if(GetLastError() != 64)
-			_LOG(L"GQCS", LEVEL_WARNING, L"SessionID: %ld, Overlapped Type:%ld, WSAGetLastError: %d\n",
-				pSession->SessionID, Overlapped->Type, GetLastError());
+			DWORD dwError = GetLastError();
+			if (dwError != 64)
+				Log(L"GQCS_LOGIN", LEVEL_WARNING, (WCHAR*)L"SessionID: %lld, Overlapped Type: %d, Overlapped Error:%lld, WSAGetLastError: %d\n",
+					pSession->SessionID, Overlapped->Type, Overlapped->Overlapped.Internal, dwError);
 		}
 		//종료 처리
 		if (Overlapped == NULL) {
@@ -274,7 +275,7 @@ bool CNetServer::Start(ULONG OpenIP, USHORT Port, int NumWorkerthread, int NumIO
 		return false;
 	}
 
-	retval = listen(_Listen_sock, SOMAXCONN);
+	retval = listen(_Listen_sock, SOMAXCONN_HINT(2048));
 	if (retval == SOCKET_ERROR) {
 		wprintf(L"listen() %d\n", WSAGetLastError()); 
 	}
