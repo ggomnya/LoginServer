@@ -7,10 +7,10 @@
 #include <WS2tcpip.h>
 #include <Windows.h>
 #include <stdio.h>
-#include <stack>
 #include <locale.h>
 #include "PacketBuffer.h"
 #include "LockfreeQueue.h"
+#include "LockfreeStack.h"
 #include "RingBuffer_Lock.h"
 #include "CCrashDump.h"
 #include "CommonStruct.h"
@@ -21,9 +21,8 @@ using namespace std;
 
 class CLanServer {
 private:
-	SRWLOCK srwINDEX;
 	stSESSION* _SessionList;
-	stack<int> _IndexSession;
+	CLockfreeStack<int> _IndexSession;
 	INT64 _SessionIDCnt;
 	SOCKET _Listen_sock;
 	HANDLE _hcp;
@@ -36,8 +35,8 @@ private:
 public:
 	int _AcceptCount;
 	int _AcceptTPS;
-	int _SendTPS;
-	int _RecvTPS;
+	volatile LONG _SendTPS;
+	volatile LONG _RecvTPS;
 	int _DisCount;
 
 	CLanServer();
@@ -69,7 +68,7 @@ public:
 	void SendPost(stSESSION* pSession);
 	void Release(stSESSION* pSession);
 
-	void DebugFunc(stSESSION* pSession, int FuncNum);
+	//void DebugFunc(stSESSION* pSession, int FuncNum);
 
 
 	

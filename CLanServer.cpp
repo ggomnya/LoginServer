@@ -14,20 +14,24 @@ CLanServer::CLanServer() {
 	_DisCount = 0;
 }
 unsigned int WINAPI CLanServer::WorkerThread(LPVOID lParam) {
+	int retval;
+	DWORD cbTransferred = 0;
+	stSESSION* pSession;
+	stOVERLAPPED* Overlapped;
+	int iSessionUseSize = 0;
+	int iRecvTPS = 0;
+	WORD wPacketCount;
+	WORD Header;
 	while (1) {
-		int retval;
-		DWORD cbTransferred = 0;
-		stSESSION* pSession;
-		stOVERLAPPED* Overlapped;
 		retval = GetQueuedCompletionStatus(_hcp, &cbTransferred, (PULONG_PTR)&pSession, (LPOVERLAPPED*)&Overlapped, INFINITE);
 
 		//종료 처리
 		if (Overlapped == NULL) {
 			return 0;
 		}
-		if (&pSession->RecvOverlapped != Overlapped && &pSession->SendOverlapped != Overlapped) {
+	/*	if (&pSession->RecvOverlapped != Overlapped && &pSession->SendOverlapped != Overlapped) {
 			CCrashDump::Crash();
-		}
+		}*/
 		//연결 끊기
 		if (cbTransferred == 0) {
 			_Disconnect(pSession);
@@ -37,41 +41,43 @@ unsigned int WINAPI CLanServer::WorkerThread(LPVOID lParam) {
 			//recv인 경우
 			//g_RecvCnt++;
 			if (Overlapped->Type == RECV) {
-				DebugFunc(pSession, RECVCOM);
+				//DebugFunc(pSession, RECVCOM);
 				//데이터 받아서 SendQ에 넣은 후 Send하기
+				iRecvTPS = 0;
 				pSession->RecvQ.MoveRear(cbTransferred);
 				while (1) {
+					iSessionUseSize = pSession->RecvQ.GetUseSize();
 					//헤더 사이즈 이상이 있는지 확인
-					if (pSession->RecvQ.GetUseSize() < LANHEADER)
+					if (iSessionUseSize < LANHEADER)
 						break;
-					WORD Header;
 					//데이터가 있는지 확인
 					pSession->RecvQ.Peek((char*)&Header, LANHEADER);
-					if (pSession->RecvQ.GetUseSize() < LANHEADER + Header)
+					if (iSessionUseSize < LANHEADER + Header)
 						break;
 					//pSession->RecvQ.MoveFront(sizeof(Header));
 					CPacket* RecvPacket = CPacket::Alloc();
-					int retval = pSession->RecvQ.Dequeue(RecvPacket->GetBufferPtr() + 3, Header + LANHEADER);
+					retval = pSession->RecvQ.Dequeue(RecvPacket->GetBufferPtr() + 3, Header + LANHEADER);
 					RecvPacket->MoveWritePos(Header);
 					if (retval < Header + LANHEADER) {
 						Disconnect(pSession->SessionID);
 						RecvPacket->Free();
 						break;
 					}
-					_RecvTPS++;
+					iRecvTPS++;
 					OnRecv(pSession->SessionID, RecvPacket);
 					//InterlockedIncrement(&pSession->_NewCount);
 					RecvPacket->Free();
 				}
-
+				InterlockedAdd(&_RecvTPS, iRecvTPS);
 				//Recv 요청하기
 				RecvPost(pSession);
 
 			}
 			//send 완료 경우
 			else {
-				DebugFunc(pSession, SENDCOM);
-				for (int i = 0; i < pSession->PacketCount; i++) {
+				//DebugFunc(pSession, SENDCOM);
+				wPacketCount = pSession->PacketCount;
+				for (int i = 0; i < wPacketCount; i++) {
 					pSession->PacketArray[i]->Free();
 					//InterlockedIncrement(&pSession->_DeleteCount);
 				}
@@ -90,6 +96,7 @@ unsigned int WINAPI CLanServer::WorkerThread(LPVOID lParam) {
 }
 
 unsigned int WINAPI CLanServer::AcceptThread(LPVOID lParam) {
+	stSESSION* pSession;
 	while (1) {
 		SOCKADDR_IN clientaddr;
 		int addrlen = sizeof(clientaddr);
@@ -104,7 +111,7 @@ unsigned int WINAPI CLanServer::AcceptThread(LPVOID lParam) {
 		_AcceptTPS++;
 		OnConnectRequest(clientaddr);
 		//빈 세션이 없을 경우 연결 끊기
-		if (_IndexSession.empty()) {
+		if (_IndexSession.Size() == 0) {
 			wprintf(L"accept()_MaxSession\n");
 			LINGER optval;
 			optval.l_linger = 0;
@@ -113,34 +120,33 @@ unsigned int WINAPI CLanServer::AcceptThread(LPVOID lParam) {
 			closesocket(client_sock);
 			continue;
 		}
-		AcquireSRWLockExclusive(&srwINDEX);
-		int curIdx = _IndexSession.top();
-		_IndexSession.pop();
-		ReleaseSRWLockExclusive(&srwINDEX);
-		_SessionList[curIdx].sock = client_sock;
-		_SessionList[curIdx].clientaddr = clientaddr;
-		_SessionList[curIdx].SessionID = ++_SessionIDCnt;
-		_SessionList[curIdx].SessionIndex = curIdx;
-		_SessionList[curIdx].SessionID |= (_SessionList[curIdx].SessionIndex << 48);
-		memset(&_SessionList[curIdx].RecvOverlapped, 0, sizeof(_SessionList[curIdx].RecvOverlapped));
-		memset(&_SessionList[curIdx].SendOverlapped, 0, sizeof(_SessionList[curIdx].SendOverlapped));
-		_SessionList[curIdx].RecvOverlapped.Type = RECV;
-		_SessionList[curIdx].SendOverlapped.Type = SEND;
-		_SessionList[curIdx].RecvOverlapped.SessionID = _SessionList[curIdx].SessionID;
-		_SessionList[curIdx].SendOverlapped.SessionID = _SessionList[curIdx].SessionID;
-		_SessionList[curIdx].IOCount = 1;
-		_SessionList[curIdx].RecvQ.ClearBuffer();
-		_SessionList[curIdx].SendQ.Clear();
-		_SessionList[curIdx].ReleaseFlag = TRUE;
-		_SessionList[curIdx].SendFlag = TRUE;
-		_SessionList[curIdx].PacketCount = 0;
+		int curIdx;
+		_IndexSession.Pop(&curIdx);
+		pSession = &_SessionList[curIdx];
+		//_IndexSession.Dequeue(&curIdx);
+		pSession->sock = client_sock;
+		pSession->clientaddr = clientaddr;
+		pSession->SessionID = ++_SessionIDCnt;
+		pSession->SessionIndex = curIdx;
+		pSession->SessionID |= (pSession->SessionIndex << 48);
+		memset(&pSession->RecvOverlapped, 0, sizeof(pSession->RecvOverlapped));
+		memset(&pSession->SendOverlapped, 0, sizeof(pSession->SendOverlapped));
+		pSession->RecvOverlapped.Type = RECV;
+		pSession->SendOverlapped.Type = SEND;
+		pSession->RecvOverlapped.SessionID = pSession->SessionID;
+		pSession->SendOverlapped.SessionID = pSession->SessionID;
+		pSession->IOCount = 1;
+		pSession->RecvQ.ClearBuffer();
+		pSession->SendQ.Clear();
+		pSession->ReleaseFlag = TRUE;
+		pSession->SendFlag = TRUE;
+		pSession->PacketCount = 0;
 		InterlockedIncrement(&_SessionCnt);
 		//wprintf(L"Accept session %s:%d\n", szClientIP, ntohs(pSession->clientaddr.sin_port));
-		CreateIoCompletionPort((HANDLE)_SessionList[curIdx].sock, _hcp, (ULONG_PTR)&_SessionList[curIdx], 0);
-		OnClientJoin(_SessionList[curIdx].clientaddr, _SessionList[curIdx].SessionID);
-		RecvPost(&_SessionList[curIdx]);
-
-		ReleaseSession(&_SessionList[curIdx]);
+		CreateIoCompletionPort((HANDLE)pSession->sock, _hcp, (ULONG_PTR)pSession, 0);
+		OnClientJoin(pSession->clientaddr, pSession->SessionID);
+		RecvPost(pSession);
+		ReleaseSession(pSession);
 
 	}
 }
@@ -156,7 +162,6 @@ bool CLanServer::Start(ULONG OpenIP, USHORT Port, int NumWorkerthread, int NumIO
 			wprintf(L"WSAStartup() %d\n", WSAGetLastError());
 			return false;
 		}
-		InitializeSRWLock(&srwINDEX);
 
 		//IOCP 생성
 		_hcp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, NumIOCP);
@@ -172,7 +177,7 @@ bool CLanServer::Start(ULONG OpenIP, USHORT Port, int NumWorkerthread, int NumIO
 		}
 
 		for (int i = _MaxSession - 1; i >= 0; i--)
-			_IndexSession.push(i);
+			_IndexSession.Push(i);
 
 		//PacketBuffer 초기화
 		CPacket::Initial(iBlockNum, bPlacementNew);
@@ -227,7 +232,6 @@ int CLanServer::GetClientCount() {
 }
 
 bool CLanServer::_Disconnect(stSESSION* pSession) {
-	WCHAR szClientIP[16];
 	int retval = InterlockedExchange(&pSession->sock, INVALID_SOCKET);
 	if (retval != INVALID_SOCKET) {
 		pSession->closeSock = retval;
@@ -373,9 +377,7 @@ void CLanServer::Release(stSESSION* pSession) {
 		setsockopt(pSession->closeSock, SOL_SOCKET, SO_LINGER, (char*)&optval, sizeof(optval));
 		closesocket(pSession->closeSock);
 		//_Disconnect(pSession);
-		AcquireSRWLockExclusive(&srwINDEX);
-		_IndexSession.push(pSession->SessionIndex);
-		ReleaseSRWLockExclusive(&srwINDEX);
+		_IndexSession.Push(pSession->SessionIndex);
 		OnClientLeave(SessionID);
 	}
 	
@@ -385,36 +387,39 @@ void CLanServer::RecvPost(stSESSION* pSession) {
 	memset(&pSession->RecvOverlapped, 0, sizeof(pSession->RecvOverlapped.Overlapped));
 	DWORD recvbyte = 0;
 	DWORD lpFlags = 0;
-	DebugFunc(pSession, RECVPOST);
+	//DebugFunc(pSession, RECVPOST);
 	//Recv 요청하기
-	if (pSession->RecvQ.GetFrontBufferPtr() <= pSession->RecvQ.GetRearBufferPtr() && (pSession->RecvQ.GetRearBufferPtr() != pSession->RecvQ.GetBufferPtr())) {
+	char* rearBufPtr = pSession->RecvQ.GetRearBufferPtr();
+	char* bufPtr = pSession->RecvQ.GetBufferPtr();
+	if ((rearBufPtr != bufPtr) && (pSession->RecvQ.GetFrontBufferPtr() <= rearBufPtr)) {
+		int iDirEnqSize = pSession->RecvQ.DirectEnqueueSize();
 		WSABUF recvbuf[2];
-		recvbuf[0].buf = pSession->RecvQ.GetRearBufferPtr();
-		recvbuf[0].len = pSession->RecvQ.DirectEnqueueSize();
-		recvbuf[1].buf = pSession->RecvQ.GetBufferPtr();
-		recvbuf[1].len = pSession->RecvQ.GetFreeSize() - pSession->RecvQ.DirectEnqueueSize();
+		recvbuf[0].buf = rearBufPtr;
+		recvbuf[0].len = iDirEnqSize;
+		recvbuf[1].buf = bufPtr;
+		recvbuf[1].len = pSession->RecvQ.GetFreeSize() - iDirEnqSize;
+		//pSession->recvLen[0] = recvbuf[0].len;
+		//pSession->recvLen[1] = recvbuf[1].len;
 		InterlockedIncrement64(&(pSession->IOCount));
+		//pSession->recvsock = pSession->sock;
 		int retval = WSARecv(pSession->sock, recvbuf, 2, &recvbyte, &lpFlags, (WSAOVERLAPPED*)&pSession->RecvOverlapped, NULL);
 		if (retval == SOCKET_ERROR) {
 			if (WSAGetLastError() != ERROR_IO_PENDING) {
-				wprintf(L"WSARecv() %d\n", WSAGetLastError());
 				int WSA = WSAGetLastError();
-				//CCrashDump::Crash();
+				//pSession->recvErr = WSA;
 				_Disconnect(pSession);
 				ReleaseSession(pSession);
 			}
 		}
-
 	}
 	else {
 		WSABUF recvbuf;
-		recvbuf.buf = pSession->RecvQ.GetRearBufferPtr();
+		recvbuf.buf = rearBufPtr;
 		recvbuf.len = pSession->RecvQ.DirectEnqueueSize();
 		InterlockedIncrement64(&(pSession->IOCount));
 		int retval = WSARecv(pSession->sock, &recvbuf, 1, &recvbyte, &lpFlags, (WSAOVERLAPPED*)&pSession->RecvOverlapped, NULL);
 		if (retval == SOCKET_ERROR) {
 			if (WSAGetLastError() != ERROR_IO_PENDING) {
-				wprintf(L"WSARecv() %d\n", WSAGetLastError());
 				int WSA = WSAGetLastError();
 				//CCrashDump::Crash();
 				_Disconnect(pSession);
@@ -432,7 +437,7 @@ void CLanServer::SendPost(stSESSION* pSession) {
 		InterlockedExchange(&(pSession->SendFlag), TRUE);
 		return;
 	}
-	DebugFunc(pSession, SENDPOST);
+	//DebugFunc(pSession, SENDPOST);
 	memset(&pSession->SendOverlapped, 0, sizeof(pSession->SendOverlapped.Overlapped));
 	DWORD sendbyte = 0;
 	DWORD lpFlags = 0;
@@ -444,17 +449,16 @@ void CLanServer::SendPost(stSESSION* pSession) {
 		pSession->SendQ.Dequeue(&(pSession->PacketArray[i]));
 		sendbuf[i].buf = pSession->PacketArray[i]->GetHeaderPtr();
 		sendbuf[i].len = pSession->PacketArray[i]->GetDataSize() + pSession->PacketArray[i]->GetHeaderSize();
-		pSession->PacketCount++;
 		i++;
 	}
+	pSession->PacketCount = i;
 	/*if (i > _SendCount)
 		_SendCount = i;*/
-	_SendTPS += i;
+	InterlockedAdd(&_SendTPS, i);
 	InterlockedIncrement64(&(pSession->IOCount));
 	retval = WSASend(pSession->sock, sendbuf, pSession->PacketCount, &sendbyte, lpFlags, (WSAOVERLAPPED*)&pSession->SendOverlapped, NULL);
 	if (retval == SOCKET_ERROR) {
 		if (WSAGetLastError() != ERROR_IO_PENDING) {
-			wprintf(L"WSASend()1 %d\n", WSAGetLastError());
 			int WSA = WSAGetLastError();
 			//CCrashDump::Crash();
 			_Disconnect(pSession);
@@ -463,14 +467,14 @@ void CLanServer::SendPost(stSESSION* pSession) {
 	}
 }
 
-void CLanServer::DebugFunc(stSESSION* pSession, int FuncNum) {
-	//return;
-	int idx = InterlockedIncrement(&pSession->debugCnt);
-	idx %= DEBUGNUM;
-	pSession->debug[idx].FuncNum = FuncNum;
-	pSession->debug[idx].IOCount = pSession->IOCount;
-	pSession->debug[idx].SessionID = pSession->SessionID;
-	pSession->debug[idx].ThreadID = GetCurrentThreadId();
-	pSession->debug[idx].Sock = pSession->sock;
-
-}
+//void CLanServer::DebugFunc(stSESSION* pSession, int FuncNum) {
+//	return;
+//	int idx = InterlockedIncrement(&pSession->debugCnt);
+//	idx %= DEBUGNUM;
+//	pSession->debug[idx].FuncNum = FuncNum;
+//	pSession->debug[idx].IOCount = pSession->IOCount;
+//	pSession->debug[idx].SessionID = pSession->SessionID;
+//	pSession->debug[idx].ThreadID = GetCurrentThreadId();
+//	pSession->debug[idx].Sock = pSession->sock;
+//
+//}

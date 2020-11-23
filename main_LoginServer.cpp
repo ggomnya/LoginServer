@@ -105,6 +105,6 @@ int wmain() {
 			if (cmd == L'q' || cmd == L'Q')
 				CCrashDump::Crash();
 		}
-		Sleep(10);
+		Sleep(50);
 	}
 }

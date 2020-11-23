@@ -5,6 +5,8 @@
 #include "TLS_ObjectPool.h"
 #include "CCrashDump.h"
 
+extern INT64 PacketNum;
+
 #define dfMAX_PACKET_BUFFER_SIZE	1000
 #define dfPACKET_CODE		0x77
 #define dfPACKET_KEY		0x32
@@ -28,6 +30,7 @@ protected:
 	LONG _RefCount;
 	bool _bEncodeFlag;
 	bool _bHeaderFlag;
+	int _CheckSum;
 	int _iHeader;
 	static TLS_CObjectPool<CPacket>* _ObjectPool;
 
@@ -42,6 +45,7 @@ public:
 	}
 
 	static CPacket* Alloc() {
+
 		CPacket* p = _ObjectPool->Alloc();
 		p->Clear();
 		p->AddRef();

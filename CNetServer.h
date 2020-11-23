@@ -39,8 +39,8 @@ private:
 public:
 	int _AcceptCount;
 	int _AcceptTPS;
-	int _SendTPS;
-	int _RecvTPS;
+	volatile LONG _SendTPS;
+	volatile LONG _RecvTPS;
 	int _DisCount;
 
 	CNetServer();
@@ -57,7 +57,7 @@ public:
 	unsigned int WINAPI AcceptThread(LPVOID lParam);
 
 	bool Start(ULONG OpenIP, USHORT Port, int NumWorkerthread, int NumIOCP, int MaxSession, 
-		int iBlockNum = 100, bool bPlacementNew = false, bool Restart = false);
+		int iBlockNum = 0, bool bPlacementNew = false, bool Restart = false);
 	
 	void Stop();
 	int GetClientCount();
@@ -72,7 +72,7 @@ public:
 	void SendPost(stSESSION* pSession);
 	void Release(stSESSION* pSession);
 
-	void DebugFunc(stSESSION* pSession, int FuncNum);
+	//void DebugFunc(stSESSION* pSession, int FuncNum);
 
 
 	
