@@ -5,13 +5,11 @@ CObjectPool<st_LOGINSESSION> CLoginServer::_SessionPool;
 unordered_map<INT64, st_ACCOUNT*> CLoginServer::_AccountMap;
 unordered_map<INT64, st_LOGINSESSION*> CLoginServer::_SessionMap;
 SRWLOCK CLoginServer::srwACCOUNT;
-//SRWLOCK CLoginServer::srwSESSION;
 CRITICAL_SECTION CLoginServer::csSESSION;
 
 CLoginServer::CLoginServer(WCHAR* DBConnectIP, WCHAR* DBID, WCHAR* DBPW) {
 	InitializeSRWLock(&srwACCOUNT);
 	InitializeCriticalSection(&csSESSION);
-	//InitializeSRWLock(&srwSESSION);
 	_hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 	_hTimeoutThread = (HANDLE)_beginthreadex(NULL, 0, TimeoutThreadFunc, this, 0, NULL);
 	_ParameterCnt = 0;
@@ -69,11 +67,9 @@ void CLoginServer::OnClientJoin(SOCKADDR_IN clientaddr, INT64 SessionID) {
 	newLoginSession->SessionID = SessionID;
 	newLoginSession->AccountNo = -1;
 	newLoginSession->RecvTime = timeGetTime();
-	//AcquireSRWLockExclusive(&srwSESSION);
 	EnterCriticalSection(&csSESSION);
 	InsertLoginSession(newLoginSession);
 	LeaveCriticalSection(&csSESSION);
-	//ReleaseSRWLockExclusive(&srwSESSION);
 }
 
 void CLoginServer::OnClientLeave(INT64 SessionID) {
@@ -82,7 +78,6 @@ void CLoginServer::OnClientLeave(INT64 SessionID) {
 	st_ACCOUNT* pAccount = NULL;
 	bool bRemove = false;
 	//SessionMap에서 삭제
-	//AcquireSRWLockExclusive(&srwSESSION);
 	EnterCriticalSection(&csSESSION);
 	pLoginSession = FindLoginSession(SessionID);
 	if (pLoginSession != NULL) {
@@ -94,7 +89,6 @@ void CLoginServer::OnClientLeave(INT64 SessionID) {
 		CCrashDump::Crash();
 	}
 	LeaveCriticalSection(&csSESSION);
-	//ReleaseSRWLockExclusive(&srwSESSION);
 	_SessionPool.Free(pLoginSession);
 
 	//AccountMap에서 삭제
@@ -203,7 +197,6 @@ void CLoginServer::OnRecv(INT64 SessionID, CPacket* pRecvPacket) {
 	ReleaseSRWLockExclusive(&srwACCOUNT);
 
 	//LoginSession 갱신
-	//AcquireSRWLockExclusive(&srwSESSION);
 	EnterCriticalSection(&csSESSION);
 	st_LOGINSESSION* pLoginSession = FindLoginSession(SessionID);
 	if (pLoginSession == NULL) {
@@ -215,7 +208,6 @@ void CLoginServer::OnRecv(INT64 SessionID, CPacket* pRecvPacket) {
 		memcpy(pLoginSession->Token, Token, 64);
 	}
 	LeaveCriticalSection(&csSESSION);
-	//ReleaseSRWLockExclusive(&srwSESSION);
 
 	//LanServer에 Parameter와 AccountNo넣어서 요청하기
 	//SendPacket 세팅 후 

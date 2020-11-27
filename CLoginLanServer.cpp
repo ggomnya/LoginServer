@@ -37,9 +37,6 @@ void CLoginLanServer::OnClientJoin(SOCKADDR_IN clientaddr, INT64 SessionID) {
 	AcquireSRWLockExclusive(&srwCLIENT);
 	InsertClient(newClient);
 	ReleaseSRWLockExclusive(&srwCLIENT);
-	/*WCHAR szClientIP[16];
-	USHORT port = ntohs(clientaddr.sin_port);
-	InetNtop(AF_INET, &clientaddr.sin_addr, szClientIP, 16);*/
 	return;
 }
 
@@ -99,23 +96,6 @@ void CLoginLanServer::OnRecv(INT64 SessionID, CPacket* pRecvPacket) {
 				LoginSessionID = pAccount->SessionID;
 				SuccessTime = pAccount->RecvTime;
 				ReleaseSRWLockShared(&CLoginServer::srwACCOUNT);
-
-
-				////SessionMap에서 찾는다
-				//AcquireSRWLockExclusive(&CLoginServer::srwSESSION);
-				//pLoginSession = CLoginServer::FindLoginSession(LoginSessionID);
-				////없는 경우 - 이미 해당 세션은 유효하지 않음 - 처리할 것이 없음
-				////존재하는 경우
-				//if (pLoginSession != NULL) {
-				//	if (AccountNo != pLoginSession->AccountNo) {
-				//		CCrashDump::Crash();
-				//	}
-				//}
-				//else {
-				//	ReleaseSRWLockExclusive(&CLoginServer::srwSESSION);
-				//	return;
-				//}
-				//ReleaseSRWLockExclusive(&CLoginServer::srwSESSION);
 				WORD Status = dfLOGIN_STATUS_OK;
 				int ServerCnt = 0;
 				WCHAR ID[20];

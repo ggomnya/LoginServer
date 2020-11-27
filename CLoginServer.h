@@ -14,7 +14,6 @@ private:
 	INT64 _ParameterCnt;
 	static SRWLOCK srwACCOUNT;
 	static CRITICAL_SECTION csSESSION;
-	//static SRWLOCK srwSESSION;
 	static CObjectPool<st_ACCOUNT> _AccountPool;
 	static CObjectPool<st_LOGINSESSION> _SessionPool;
 	HANDLE _hEvent;
